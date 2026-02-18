@@ -1,0 +1,23 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY turbo.json ./
+COPY apps/web/package*.json ./apps/web/
+COPY packages/shared/package*.json ./packages/shared/
+
+# Install dependencies
+RUN npm install
+
+# Copy source
+COPY apps/web ./apps/web
+COPY packages/shared ./packages/shared
+
+# Build
+RUN npm run build --workspace=@linguamentor/web
+
+EXPOSE 3000
+
+CMD ["npm", "start", "--workspace=@linguamentor/web"]

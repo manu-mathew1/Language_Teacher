@@ -1,0 +1,285 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== User & Profile ====================
+
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  name           String
+  nativeLanguage String   @map("native_language")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  profile            UserProfile?
+  enrollments        Enrollment[]
+  lessonCompletions  LessonCompletion[]
+  exerciseAttempts   ExerciseAttempt[]
+  voiceSessions      VoiceSession[]
+  homeworkAssignments HomeworkAssignment[]
+  progressSnapshots  ProgressSnapshot[]
+
+  @@map("users")
+}
+
+model UserProfile {
+  id               String @id @default(uuid())
+  userId           String @unique @map("user_id")
+  avatar           String?
+  timezone         String @default("UTC")
+  dailyGoalMinutes Int    @default(15) @map("daily_goal_minutes")
+  currentStreak    Int    @default(0) @map("current_streak")
+  longestStreak    Int    @default(0) @map("longest_streak")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_profiles")
+}
+
+// ==================== Language & Curriculum ====================
+
+model Language {
+  code      String  @id
+  name      String
+  isActive  Boolean @default(true) @map("is_active")
+  
+  enrollments Enrollment[]
+  levels      Level[]
+
+  @@map("languages")
+}
+
+model Level {
+  id                     String @id @default(uuid())
+  languageCode           String @map("language_code")
+  cefrLevel              String @map("cefr_level") // A1, A2, B1, B2, C1, C2
+  order                  Int
+  name                   String
+  description            String
+  requiredScoreToAdvance Int    @default(70) @map("required_score_to_advance")
+
+  language    Language     @relation(fields: [languageCode], references: [code], onDelete: Cascade)
+  stages      Stage[]
+  enrollments Enrollment[]
+
+  @@unique([languageCode, cefrLevel])
+  @@map("levels")
+}
+
+model Stage {
+  id          String @id @default(uuid())
+  levelId     String @map("level_id")
+  order       Int
+  name        String
+  description String
+  skillFocus  String @map("skill_focus") // speaking, listening, writing, reading, vocabulary, grammar
+
+  level   Level    @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+
+  @@map("stages")
+}
+
+model Lesson {
+  id              String @id @default(uuid())
+  stageId         String @map("stage_id")
+  order           Int
+  type            String // vocabulary, grammar, listening, speaking, conversation, writing, review
+  title           String
+  description     String
+  durationMinutes Int    @map("duration_minutes")
+  contentJson     Json   @map("content_json")
+
+  stage              Stage                 @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  exercises          Exercise[]
+  lessonCompletions  LessonCompletion[]
+  voiceSessions      VoiceSession[]
+  homeworkAssignments HomeworkAssignment[]
+
+  @@map("lessons")
+}
+
+model Exercise {
+  id             String  @id @default(uuid())
+  lessonId       String  @map("lesson_id")
+  order          Int
+  type           String  // multiple_choice, fill_in_blank, translation, etc.
+  prompt         String
+  expectedAnswer String? @map("expected_answer")
+  options        Json?   // For multiple choice
+  difficulty     Int     // 1-10
+  metadata       Json?
+
+  lesson   Lesson            @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  attempts ExerciseAttempt[]
+
+  @@map("exercises")
+}
+
+// ==================== Progress & Completions ====================
+
+model Enrollment {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  languageCode     String   @map("language_code")
+  currentLevelId   String   @map("current_level_id")
+  currentStageId   String?  @map("current_stage_id")
+  overallProgress  Int      @default(0) @map("overall_progress") // 0-100
+  startedAt        DateTime @default(now()) @map("started_at")
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  language          Language           @relation(fields: [languageCode], references: [code], onDelete: Cascade)
+  currentLevel      Level              @relation(fields: [currentLevelId], references: [id])
+  progressSnapshots ProgressSnapshot[]
+
+  @@unique([userId, languageCode])
+  @@map("enrollments")
+}
+
+model LessonCompletion {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  lessonId         String   @map("lesson_id")
+  score            Int      // 0-100
+  timeSpentSeconds Int      @map("time_spent_seconds")
+  completedAt      DateTime @default(now()) @map("completed_at")
+  attemptNumber    Int      @default(1) @map("attempt_number")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@map("lesson_completions")
+}
+
+model ExerciseAttempt {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  exerciseId    String   @map("exercise_id")
+  userAnswer    String   @map("user_answer")
+  aiEvaluation  String   @map("ai_evaluation")
+  score         Int      // 0-100
+  attemptNumber Int      @default(1) @map("attempt_number")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@map("exercise_attempts")
+}
+
+model ProgressSnapshot {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  enrollmentId     String   @map("enrollment_id")
+  date             DateTime @default(now())
+  vocabularyScore  Int      @default(0) @map("vocabulary_score") // 0-100
+  grammarScore     Int      @default(0) @map("grammar_score")
+  speakingScore    Int      @default(0) @map("speaking_score")
+  listeningScore   Int      @default(0) @map("listening_score")
+  writingScore     Int      @default(0) @map("writing_score")
+  readingScore     Int      @default(0) @map("reading_score")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  enrollment Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, enrollmentId, date])
+  @@map("progress_snapshots")
+}
+
+// ==================== Voice & Conversation ====================
+
+model VoiceSession {
+  id                  String   @id @default(uuid())
+  userId              String   @map("user_id")
+  lessonId            String?  @map("lesson_id")
+  audioUrl            String   @map("audio_url")
+  transcript          String
+  aiFeedback          String   @map("ai_feedback")
+  pronunciationScore  Int      @map("pronunciation_score") // 0-100
+  durationSeconds     Int      @map("duration_seconds")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson? @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+
+  @@map("voice_sessions")
+}
+
+// ==================== Homework ====================
+
+model HomeworkAssignment {
+  id                 String   @id @default(uuid())
+  userId             String   @map("user_id")
+  assignedByLessonId String   @map("assigned_by_lesson_id")
+  type               String   // translation, writing_prompt, listening_comprehension, etc.
+  prompt             String
+  dueDate            DateTime @map("due_date")
+  status             String   @default("assigned") // assigned, submitted, graded, overdue
+  createdAt          DateTime @default(now()) @map("created_at")
+
+  user              User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedByLesson  Lesson                @relation(fields: [assignedByLessonId], references: [id], onDelete: Cascade)
+  submissions       HomeworkSubmission[]
+
+  @@map("homework_assignments")
+}
+
+model HomeworkSubmission {
+  id           String   @id @default(uuid())
+  assignmentId String   @map("assignment_id")
+  content      String
+  aiGrade      Int      @map("ai_grade") // 0-100
+  aiFeedback   String   @map("ai_feedback")
+  submittedAt  DateTime @default(now()) @map("submitted_at")
+
+  assignment HomeworkAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  @@map("homework_submissions")
+}
+
+// ==================== System ====================
+
+model FeatureFlag {
+  key         String  @id
+  value       String
+  description String
+  isActive    Boolean @default(true) @map("is_active")
+
+  @@map("feature_flags")
+}
+
+model PromptVersion {
+  id          String   @id @default(uuid())
+  promptKey   String   @map("prompt_key")
+  version     Int
+  contentHash String   @map("content_hash")
+  content     String
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  aiInteractionLogs AIInteractionLog[]
+
+  @@unique([promptKey, version])
+  @@map("prompt_versions")
+}
+
+model AIInteractionLog {
+  id              String   @id @default(uuid())
+  userId          String?  @map("user_id")
+  promptVersionId String?  @map("prompt_version_id")
+  inputTokens     Int      @map("input_tokens")
+  outputTokens    Int      @map("output_tokens")
+  latencyMs       Int      @map("latency_ms")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  promptVersion PromptVersion? @relation(fields: [promptVersionId], references: [id], onDelete: SetNull)
+
+  @@map("ai_interaction_logs")
+}
